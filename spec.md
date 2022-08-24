@@ -24,6 +24,8 @@ delete(name: string) = deletes the corresponding instance
 install(version: string, platforms: [string]) = install version for platforms
 uninstall(version: string, platforms: [string]) = uninstall version for platforms
 
+list(type: instances | versions) = list values for given type
+
 run(name, version: string, platform: string = "desktop") = runs instance with version and platform
 ```
 

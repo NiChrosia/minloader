@@ -28,7 +28,9 @@ proc help() =
 
 # setup
 var client = newHttpClient()
-client.setSecret(readFile("github_secret.txt"))
+
+if fileExists("github_secret.txt"):
+    client.setSecret(readFile("github_secret.txt"))
 
 if not dirExists(folder):
     createDir(folder)
@@ -190,6 +192,8 @@ proc run(instanceName: string, versionName: string, platform: string = "desktop"
 
     let version = storedVersions.findIt(it.name == versionName)
         .unwrap(parse("Version '{bright}[green]" & versionName & "{reset}' does not exist or is not installed!"))
+
+    echo instance.directory
 
     instance.run(version.directory, platform)
 
