@@ -17,7 +17,11 @@ proc run*(instance: Instance, versionDirectory, platform: string) =
     let command = "java -jar " & jar
     let variable = "MINDUSTRY_DATA_DIR"
 
-    putEnv(variable, instance.directory)
+    if platform == "desktop":
+        putEnv(variable, instance.directory)
+    elif platform == "server":
+        setCurrentDir(instance.directory)
+
     discard execShellCmd(command)
 
 # utilities

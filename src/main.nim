@@ -193,8 +193,6 @@ proc run(instanceName: string, versionName: string, platform: string = "desktop"
     let version = storedVersions.findIt(it.name == versionName)
         .unwrap(parse("Version '{bright}[green]" & versionName & "{reset}' does not exist or is not installed!"))
 
-    echo instance.directory
-
     instance.run(version.directory, platform)
 
 # arguments
