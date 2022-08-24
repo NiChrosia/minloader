@@ -33,7 +33,7 @@ proc progressBar(total, progress, speed: BiggestInt) =
 
     if barLength > 0:
         bar &= progressBarLine.repeat(barLength - 1)
-    bar &= ">"
+        bar &= ">"
 
     bar &= "{reset}"
 
@@ -42,7 +42,7 @@ proc progressBar(total, progress, speed: BiggestInt) =
     bar &= "]"
 
     stdout.cursorUp()
-    stdout.eraseLine()
+    stdout.setCursorXPos("desktop: ".len())
 
     stdout.writeLine parse(bar)
 
@@ -54,6 +54,8 @@ proc downloadDesktop*(version: var Version, client: HttpClient, release: Release
     let asset = release.assets.findIt(it.name in desktopFiles)
         .unwrap(fmt"No desktop asset present in version '{release.tag}'!")
 
+    echo "desktop:"
+
     client.downloadFile(asset.download, file)
     # onProgressChanged isn't called on completion, for whatever reason'
     progressBar(progressBarLength, progressBarLength, 0)
@@ -64,6 +66,8 @@ proc downloadServer*(version: var Version, client: HttpClient, release: Release)
     let file = version.directory / "server.jar"
     let asset = release.assets.findIt(it.name in serverFiles)
         .unwrap(fmt"No server asset present in version '{release.tag}'!")
+
+    echo "server: "
 
     client.downloadFile(asset.download, file)
     progressBar(progressBarLength, progressBarLength, 0)
