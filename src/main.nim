@@ -1,255 +1,133 @@
-import os, std/[options, httpclient, json, strutils, sequtils]
-import releases, instances, versions, utils
+import httpclient, os, cligen, base64, json, tables
 
-# semi-constants
-let folder = getAppDir() / "minloader-v1"
-let instancesFolder = folder / "instances"
-let versionsFolder = folder / "versions"
+# utility
+proc setAuth(client: var HttpClient, auth: string) =
+    let auth = "Basic " & base64.encode(auth)
+    client.headers["Authorization"] = auth
 
-const helpText = """
-{function}default{} = prompt this help menu
-{function}new{}(name: {argument}string{}) = creates a new instance with name
-{function}delete{}(name: {argument}string{}) = deletes the corresponding instance
+proc parseLinks(raw: string): Table[string, string] =
+    ## because it's normally unusable
 
-{function}install{}(version: {argument}string{}, platforms: {argument}[string]{}) = install version for platforms
-{function}uninstall{}(version: {argument}string{}, platforms: {argument}[string]{}) = uninstall version for platforms
+    for link in raw.split(", "):
+        var url, rel: string
 
-{function}list{reset}(type: {argument}instances{} | {argument}versions{}) = list values for given type
+        for part in link.split("; "):
+            if part[0] == '<':
+                # url
+                
+                let start = 1
+                let stop = part.high - 1
 
-{function}run{}(name, version: {argument}string{}, platform: {argument}string{} = "desktop"{}) = runs instance with version and platform"""
+                # remove <>
+                url = part[start .. stop]
+            elif part[0] == 'r':
+                # rel
+                
+                let start = "rel=\"".len
+                let stop = part.high - 1
 
-proc help() =
-    let text = helpText
-        .replace("{function}", "{bright}[yellow]")
-        .replace("{argument}", "[blue]")
-        .replace("{}", "{reset}")
+                rel = part[start .. stop]
 
-    echo parse(text)
+        result[rel] = url
 
-# setup
-var client = newHttpClient()
+proc assets(client: HttpClient): OrderedTable[string, OrderedTable[string, string]] =
+    var call = "https://api.github.com/repos/Anuken/Mindustry/releases"
+    var responses: seq[Response]
 
-if fileExists("github_secret.txt"):
-    client.setSecret(readFile("github_secret.txt"))
+    while true:
+        let response = client.get(call)
+        responses.add(response)
 
-if not dirExists(folder):
-    createDir(folder)
+        let headers = response.headers.table
+        let links = headers["link"][0].parseLinks()
 
-var releasesFile = folder / "releases.json"
-
-var mindustryReleases = if not fileExists(releasesFile):
-    var releases = client.releasesFor("Anuken", "Mindustry")
-    let json = %*releases
-
-    writeFile(releasesFile, json.pretty(4))
-
-    releases
-else:
-    readFile(releasesFile)
-        .parseJson()
-        .to(seq[Release])
-
-client.setProgressBar()
-
-if not dirExists(instancesFolder):
-    createDir(instancesFolder)
-
-if not dirExists(versionsFolder):
-    createDir(versionsFolder)
-
-# state
-var storedInstances = storedInstances(instancesFolder)
-var storedVersions = storedVersions(versionsFolder)
-
-# command checks
-proc installed(name: string, platform: string): bool =
-    let maybeVersion = storedVersions.findIt(it.name == name)
-
-    if maybeVersion.isSome():
-        let version = maybeVersion.get()
-
-        if platform == "desktop":
-            return version.desktop
-        elif platform == "server":
-            return version.server
+        if links.hasKey("next"):
+            call = links["next"]
         else:
-            echo "Unrecognized platform!"
-            quit(0)
-    else:
-        return false
+            break
+
+    # get releases
+    var releases: seq[JsonNode]
+
+    for response in responses:
+        let root = parseJson(response.body)
+
+        for release in root:
+            releases.add(release)
+
+    for release in releases:
+        let tag = release["tag_name"].getStr()
+        let assets = release["assets"]
+
+        var downloads: OrderedTable[string, string]
+
+        for asset in assets:
+            let name = asset["name"].getStr()
+            let url = asset["browser_download_url"].getStr()
+
+            downloads[name] = url
+
+        result[tag] = downloads
 
 # commands
-proc newInstance(name: string) =
-    storedInstances.findIt(it.name == name)
-        .ifSome("Instance already exists!")
+proc run(jar, directory: string) =
+    ## run a mindustry jar in the specified directory
+    let command = "java -jar " & absolutePath(jar)
 
-    let instance = newInstance(name, instancesFolder / name)
-    storedInstances.add(instance)
+    # handles directories for desktop & server, respectively
+    putEnv("MINDUSTRY_DATA_DIR", absolutePath(directory))
+    setCurrentDir(directory)
 
-    echo parse("Instance '{bright}[yellow]" & name & "{reset}' created!")
+    discard execShellCmd(command)
 
-proc deleteInstance(name: string) =
-    let instance = storedInstances.findIt(it.name == name)
-        .unwrap("No such instance!")
+proc search(token: string = "") =
+    ## list available mindustry versions, optionally
+    ## with a token to raise the ratelimit
+    var client = newHttpClient()
 
-    removeDir(instance.directory)
-    storedInstances.delete(storedInstances.find(instance))
+    if token != "":
+        client.setAuth(token)
 
-    echo parse("Instance '{bright}[yellow]" & name & "{reset}' deleted.")
+    let assets = assets(client)
 
-proc install(name: string, platforms: seq[string]) =
-    for platform in platforms:
-        if installed(name, platform):
-            echo parse("Platform '{bright}[blue]" & platform & "{reset}' is already installed!")
-            quit(0)
+    for tag in assets.keys:
+        stdout.write(tag & ": ")
 
-    let release = mindustryReleases.findIt(it.tag == name)
-        .unwrap(parse("Version '{bright}[green]" & name & "{reset}' not found."))
+        for name in assets[tag].keys:
+            stdout.write(name & ", ")
 
-    var version = newVersion(name, versionsFolder / name)
+        stdout.write("\n")
 
-    if platforms.contains("desktop"):
-        version.downloadDesktop(client, release)
+proc download(tag, asset: string, destination: string, token: string = "") =
+    ## download a mindustry version, by tag
+    ## also optionally accepts a token
+    var client = newHttpClient()
 
-    if platforms.contains("server"):
-        version.downloadServer(client, release)
+    if token != "":
+        client.setAuth(token)
 
-    storedVersions.add(version)
+    let assets = assets(client)
 
-    echo parse("Version '{bright}[green]" & name & "{reset}' installed!")
+    # indentation lol
+    for tTag in assets.keys:
+        if tag == tTag:
+            for tAsset in assets[tag].keys:
+                if asset == tAsset:
+                    let download = assets[tag][asset]
+                    client.downloadFile(download, destination)
 
-proc uninstall(name: string, platforms: seq[string]) =
-    var version = storedVersions.findIt(it.name == name)
-            .unwrap("No such version!")
-
-    let deleteAll = platforms.contains("desktop") and platforms.contains("server") or
-    platforms.onlyContains("desktop") and not version.server or
-    platforms.onlyContains("server") and not version.desktop
-
-    if deleteAll:
-        removeDir(version.directory)
-        storedVersions.delete(storedVersions.find(version))
-
-        echo parse("Version '{bright}[green]" & name & "{reset}' uninstalled.")
-    else:
-        for platform in platforms:
-            if platform == "desktop":
-                version.desktop = false
-            elif platform == "server":
-                version.server = false
-            else:
-                echo parse("Unrecognized platform '{bright}[blue]" & platform & "{reset}'!")
-
-            removeFile(version.directory / platform & ".jar")
-
-            echo parse("Platform '{bright}[blue]" & platform & "{reset}' of '{bright}[green]" & name & "{reset}' uninstalled.")
-
-proc list(kind: string) =
-    case kind
-    of "instances":
-        if storedInstances.len() == 0:
-            echo "There are currently no instances."
-            quit(0)
-
-        echo storedInstances.mapIt(parse("{bright}[yellow]" & it.name & "{reset}")).join(", ")
-    of "versions":
-        if storedVersions.len() == 0:
-            echo "There are no versions installed."
-            quit(0)
-
-        var longest = 0
-
-        for version in storedVersions:
-            if version.name.len() > longest:
-                longest = version.name.len()
-
-        for version in storedVersions:
-            stdout.write version.name, ": "
-
-            if version.name.len() < longest:
-                stdout.write " ".repeat(longest - version.name.len())
-
-            if version.desktop:
-                stdout.write parse("{bright}[green]desktop{reset}")
-            else:
-                stdout.write parse("[red]desktop{reset}")
-
-            stdout.write ", "
-
-            if version.server:
-                stdout.write parse("{bright}[green]server{reset}")
-            else:
-                stdout.write parse("[red]server{reset}")
-
-            stdout.write "\n"
-    else:
-        echo parse("Unrecognized type '{bright}[magenta]" & kind & "{reset}'.")
-        quit(0)
-
-proc run(instanceName: string, versionName: string, platform: string = "desktop") =
-    let instance = storedInstances.findIt(it.name == instanceName)
-        .unwrap(parse("There is no instance named '{bright}[yellow]" & instanceName & "{reset}'!"))
-
-    let version = storedVersions.findIt(it.name == versionName)
-        .unwrap(parse("Version '{bright}[green]" & versionName & "{reset}' does not exist or is not installed!"))
-
-    instance.run(version.directory, platform)
-
-# arguments
-proc require(arguments: seq[string], index: int, error: string): string =
-    if arguments.len() == index:
-        echo error
-        quit(0)
-    else:
-        return arguments[index]
-
-proc requireList(arguments: seq[string], index: int, error: string): seq[string] =
-    if arguments.len() == index:
-        echo error
-        quit()
-    else:
-        return arguments[index .. arguments.high]
-
-proc defaulted(arguments: seq[string], index: int, default: string): string =
-    if arguments.len() == index:
-        return default
-    else:
-        return arguments[index]
-
-let arguments = commandLineParams()
-let command = arguments.defaulted(0, "help")
-
-case command
-of "help":
-    help()
-of "new":
-    let name = arguments.require(1, "No name specified.")
-
-    newInstance(name)
-of "delete":
-    let name = arguments.require(1, "No name specified.")
-
-    deleteInstance(name)
-of "install":
-    let name = arguments.require(1, "No version specified.")
-    let platforms = arguments.requireList(2, "No platforms specified.")
-
-    install(name, platforms)
-of "uninstall":
-    let name = arguments.require(1, "No version specified.")
-    let platforms = arguments.requireList(2, "No platforms specified.")
-
-    uninstall(name, platforms)
-of "list":
-    let kind = arguments.require(1, "No type specified.")
-
-    list(kind)
-of "run":
-    let instanceName = arguments.require(1, "No instance specified.")
-    let versionName = arguments.require(2, "No version specified.")
-
-    let platform = arguments.defaulted(3, "desktop")
-
-    run(instanceName, versionName, platform)
-else:
-    echo "Unrecognized command."
+dispatchMulti(
+    [run, help = {
+        "jar": "The Mindustry jar file to run",
+        "directory": "Working directory for the Mindustry instance"
+    }],
+    [search, help = {
+        "token": "Optional GitHub token to raise the default ratelimit"
+    }],
+    [download, help = {
+        "tag": "The tag of the release to download from",
+        "asset": "The release asset to download",
+        "destination": "Where to download the release asset",
+        "token": "Optional Github token to raise the defualt ratelimit"
+    }]
+)

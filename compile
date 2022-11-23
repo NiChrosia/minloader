@@ -1,7 +1,0 @@
-mkdir build || true
-
-nimble -d:ssl build
-nim compile -d:mingw -d:ssl ./src/main.nim
-
-mv ./main build/main
-mv ./src/main.exe ./build/main.exe
