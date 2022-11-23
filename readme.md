@@ -2,14 +2,14 @@
 
 ### Quickstart
 
-- Download the [latest release]().
+- Download the [latest release](https://github.com/NiChrosia/minloader/releases/latest).
 - Run `minloader search` to get a list of Mindustry jars.
-- - Some versions towards the bottom don't have any assets, which is because the corresponding old releases don't either.
+-- Some versions towards the bottom don't have any assets, which is because the corresponding old releases don't either.
 - Download a jar using a command like `minloader download --tag:"v140.4" --asset:"Mindustry.jar" --destination:"./Mindustry.jar"`, except with your wanted tag and asset.
-- - `Mindustry.jar` or `desktop-release.jar` generally are the desktop version.
-- - `server-release.jar` is always the server version.
+-- `Mindustry.jar` and `desktop-release.jar` are generally the desktop versions.
+-- `server-release.jar` is always the server version.
 - Run the downloaded jar using something like `minloader run --jar:"Mindustry.jar" --directory:"./mindustry/"`
-- - Mindustry should now be running, and saving it's data to the specified folder.
+-- Mindustry should now be running, and saving its data to the specified folder.
 
 ### Run
 
