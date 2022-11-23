@@ -1,12 +1,11 @@
 # Package
 
-version       = "0.2.0"
+version       = "0.2.1"
 author        = "NiChrosia"
 description   = "A simple version manager for Mindustry, using GitHub releases."
 license       = "MIT"
 srcDir        = "src"
 bin           = @["minloader"]
-
 
 # Dependencies
 
