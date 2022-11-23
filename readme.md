@@ -18,13 +18,13 @@
 3. Run the downloaded jar using something like `minloader run --jar:"Mindustry.jar" --directory:"./mindustry/"`
 - Mindustry should now be running, and saving its data to the specified folder.
 
-### Run
+### Running Mindustry
 
 `minloader run --jar:"~/Downloads/v140.4-desktop.jar" --directory:"~/.local/share/Mindustry"`
 
 `--jar` takes any Mindustry jar, and runs it in `--directory`. This works with both the desktop version and a server.
 
-### Search
+### Finding versions
 
 `minloader search [--token:""]`
 
@@ -32,7 +32,7 @@ Prints a list of all Mindustry releases with their downloadable assets. Used for
 
 `--token` is an optional GitHub token argument that is used to bypass the low default ratelimit.
 
-### Download
+### Downloading versions
 
 `minloader download --tag:"v140.4" --asset:"Mindustry.jar" --destination:"~/Downloads/v140.4-desktop.jar" [--token:""]`
 
