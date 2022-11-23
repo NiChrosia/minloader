@@ -4,8 +4,8 @@
 
 #### Installation
 
-1. Install [Nim](https://nim-lang.org/download/nim-1.6.10_x64.zip), if you haven't already.
-2. Clone this repository using `git clone https://github.com/NiChrosia/minloader`, and navigate to it.
+1. Install [Nim](https://nim-lang.org/), either using [a zip of v1.6.10](https://nim-lang.org/download/nim-1.6.10_x64.zip), or [a version manager, choosenim](https://github.com/dom96/choosenim/releases/latest), if you haven't already.
+2. Clone this repository with Git, using `git clone https://github.com/NiChrosia/minloader`, and navigate to it.
 3. Run `nimble install` to install the executable.
 
 #### Usage
