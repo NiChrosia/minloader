@@ -11,3 +11,4 @@ bin           = @["main"]
 # Dependencies
 
 requires "nim >= 1.6.4"
+requires "cligen >= 1.5.31"

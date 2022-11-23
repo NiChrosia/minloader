@@ -6,8 +6,6 @@ proc setAuth(client: var HttpClient, auth: string) =
     client.headers["Authorization"] = auth
 
 proc parseLinks(raw: string): Table[string, string] =
-    ## because it's normally unusable
-
     for link in raw.split(", "):
         var url, rel: string
 
