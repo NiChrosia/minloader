@@ -20,13 +20,17 @@
 
 ### Running Mindustry
 
-`minloader run --jar:"~/Downloads/v140.4-desktop.jar" --directory:"~/.local/share/Mindustry"`
+```
+minloader run --jar:"~/Downloads/v140.4-desktop.jar" --directory:"~/.local/share/Mindustry"
+```
 
 `--jar` takes any Mindustry jar, and runs it in `--directory`. This works with both the desktop version and a server.
 
 ### Finding versions
 
-`minloader search [--token:""]`
+```
+minloader search [--token:""]
+```
 
 Prints a list of all Mindustry releases with their downloadable assets. Used for `minloader download`.
 
@@ -34,7 +38,9 @@ Prints a list of all Mindustry releases with their downloadable assets. Used for
 
 ### Downloading versions
 
-`minloader download --tag:"v140.4" --asset:"Mindustry.jar" --destination:"~/Downloads/v140.4-desktop.jar" [--token:""]`
+```
+minloader download --tag:"v140.4" --asset:"Mindustry.jar" --destination:"~/Downloads/v140.4-desktop.jar" [--token:""]
+```
 
 Downloads `--asset` of the release tagged `--tag` to `--destination`.
 
