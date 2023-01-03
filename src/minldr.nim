@@ -1,4 +1,4 @@
-import httpclient, os, json, tables, strutils, cligen, algorithm, strformat, terminal, asyncdispatch
+import httpclient, os, json, tables, strutils, algorithm, strformat, terminal, asyncdispatch
 
 const HELP = """
 usage: minldr [command]
