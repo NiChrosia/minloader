@@ -22,7 +22,7 @@ commands:
 (r)un [version] [(d)esktop | (s)erver] [directory]
 :: runs [platform] of [version] in [directory]
 
-minldr version v0.3.0
+minldr version v0.3.1
 """
 
 # utility

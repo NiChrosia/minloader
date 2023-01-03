@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.2.1"
+version       = "0.3.1"
 author        = "NiChrosia"
 description   = "A simple version manager for Mindustry, using GitHub releases."
 license       = "MIT"
@@ -10,4 +10,3 @@ bin           = @["minldr"]
 # Dependencies
 
 requires "nim >= 1.6.4"
-requires "cligen >= 1.5.31"
