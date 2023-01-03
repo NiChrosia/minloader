@@ -28,3 +28,29 @@ For additional clarification, `[directory]` is the run directory, for either the
 To see either available or installed versions, use `minldr list [available | installed]`, or `minldr l [a | i]`.
 
 To see the help pages, either simply call `minldr` for all of them, or `minldr [command]` for a specific command.
+
+## Help text
+
+Inserted for convenient access.
+
+```
+usage: minldr [command]
+
+commands:
+(l)ist [(a)vailable | (i)nstalled]
+:: lists either versions available for download or installed versions
+
+(d)ownload [version] [(d)esktop | (s)erver] [file]
+:: downloads [version] of platform [desktop | server] to [file]
+
+(i)nstall [version] [(d)esktop | (s)erver]
+:: essentially [download], but is tracked by minldr
+
+(u)ninstall [version] [(d)esktop | (s)erver]
+:: deletes the given platform for [version]
+
+(r)un [version] [(d)esktop | (s)erver] [directory]
+:: runs the given platform of [version] in [directory]
+
+minldr version v0.3.0
+```
