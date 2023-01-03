@@ -5,7 +5,7 @@ author        = "NiChrosia"
 description   = "A simple version manager for Mindustry, using GitHub releases."
 license       = "MIT"
 srcDir        = "src"
-bin           = @["mldr"]
+bin           = @["minldr"]
 
 # Dependencies
 
