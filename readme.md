@@ -17,9 +17,11 @@ To use the state, use `minldr install [version] [desktop | server]`, or the simi
 
 ### Running Mindustry
 
-Full command: `minldr run [version] [desktop | server] [directory]`
-Shorthand: `minldr r [version] [d | s] [directory]`
-Example: `minldr r v140.4 d ~/.local/share/Mindustry/`, or for the default Windows folder, `~/AppData/Roaming/Mindustry/`.
+Similarly to above, you can choose whether to use the state.
+
+To use it, call `minldr run [version] [desktop | server] [directory]`, or the corresponding shorthand.
+
+To not use it, call `minldr execute [jar] [directory]`, or the corresponding shorthand.
 
 For additional clarification, `[directory]` is the run directory, for either the desktop or server version.
 
