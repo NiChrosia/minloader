@@ -38,7 +38,7 @@ usage: minldr [command]
 
 commands:
 (l)ist [(a)vailable | (i)nstalled]
-:: lists either versions available for download or installed versions
+:: lists versions either available for download or installed
 
 (d)ownload [version] [(d)esktop | (s)erver] [file]
 :: downloads [version] of platform [desktop | server] to [file]
@@ -47,10 +47,13 @@ commands:
 :: essentially [download], but is tracked by minldr
 
 (u)ninstall [version] [(d)esktop | (s)erver]
-:: deletes the given platform for [version]
+:: deletes [platform] for [version]
+
+(e)xecute [jar] [directory]
+:: runs the Mindustry [jar] in [directory]
 
 (r)un [version] [(d)esktop | (s)erver] [directory]
-:: runs the given platform of [version] in [directory]
+:: runs [platform] of [version] in [directory]
 
 minldr version v0.3.0
 ```
