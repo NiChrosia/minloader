@@ -5,7 +5,7 @@ usage: minldr [command]
 
 commands:
 (l)ist [(a)vailable | (i)nstalled]
-:: lists either versions available for download or installed versions
+:: lists versions either available for download or installed
 
 (d)ownload [version] [(d)esktop | (s)erver] [file]
 :: downloads [version] of platform [desktop | server] to [file]
@@ -14,10 +14,13 @@ commands:
 :: essentially [download], but is tracked by minldr
 
 (u)ninstall [version] [(d)esktop | (s)erver]
-:: deletes the given platform for [version]
+:: deletes [platform] for [version]
+
+(e)xecute [jar] [directory]
+:: runs the Mindustry [jar] in [directory]
 
 (r)un [version] [(d)esktop | (s)erver] [directory]
-:: runs the given platform of [version] in [directory]
+:: runs [platform] of [version] in [directory]
 
 minldr version v0.3.0
 """
@@ -256,25 +259,32 @@ proc uninstall(tag: string, list = false, desktop = false, server = false) =
 
         fail(fmt"platform '{platform}' of version '{tag}' not installed!")
 
-proc run(tag, directory: string; list = false, desktop = false, server = false) =
-    ## run a mindustry jar in the specified directory
-
-    let jar = jar(tag, desktop, server)
+proc execute(jar, directory: string) =
     let command = "java -jar " & absolutePath(jar)
 
     if not fileExists(jar):
-        let platform = if desktop: "desktop" else: "server"
-
-        fail(fmt"platform '{platform}' of version '{tag}' is not installed!")
+        fail(fmt"jar at location '{jar}' does not exist!")
 
     if not dirExists(directory):
-        fail("directory '{directory}' does not exist!")
+        fail(fmt"directory '{directory}' does not exist!")
 
     # handles directories for desktop & server, respectively
     putEnv("MINDUSTRY_DATA_DIR", absolutePath(directory))
     setCurrentDir(directory)
 
     discard execShellCmd(command)
+
+proc run(tag, directory: string; list = false, desktop = false, server = false) =
+    ## run a mindustry jar in the specified directory
+
+    let jar = jar(tag, desktop, server)
+
+    if not fileExists(jar):
+        let platform = if desktop: "desktop" else: "server"
+
+        fail(fmt"platform '{platform}' of version '{tag}' is not installed!")
+
+    execute(jar, directory)
 
 var arguments = commandLineParams().reversed()
 
@@ -300,10 +310,14 @@ of "list", "l":
         # version - platforms in binary
         # 10 = desktop, 01 = server, 11 = both
         var platforms: Table[string, int]
+    
+        var childrenInDir = 0
 
         for (kind, path) in walkDir(jarDir):
             if kind != pcFile:
                 continue
+
+            childrenInDir += 1
 
             # example: v140.4-desktop.jar
             let (_, name, _) = splitFile(path)
@@ -322,6 +336,9 @@ of "list", "l":
                 platforms[version] = platforms[version] or 0b01
             else:
                 discard
+
+        if childrenInDir == 0:
+            fail("no versions installed!")
 
         for version in platforms.keys:
             let bits = platforms[version]
@@ -392,6 +409,13 @@ of "uninstall", "u":
         uninstall(version, server = true)
     else:
         fail("unrecognized platform '" & platform & "'!")
+of "execute", "e":
+    expect(2)
+
+    let jar = arguments.pop()
+    let directory = arguments.pop()
+
+    execute(jar, directory)
 of "run", "r":
     expect(3)
 
