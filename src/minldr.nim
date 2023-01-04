@@ -1,4 +1,4 @@
-import httpclient, os, json, tables, strutils, algorithm, strformat, terminal, asyncdispatch
+import httpclient, os, json, tables, strutils, algorithm, strformat, terminal, asyncdispatch, macros
 
 const HELP = """
 usage: minldr [command]
@@ -338,6 +338,24 @@ proc run(tag, directory: string, platform: Platform) =
 
     execute(jar, directory)
 
+# capture(a, b, c)
+# ->
+# expect(3)
+# let a = arguments.pop()
+# let b = arguments.pop()
+# let c = arguments.pop()
+macro capture(commandArguments: varargs[untyped]): untyped =
+    result = newStmtList()
+
+    let count = commandArguments.len
+    result.add newCall(bindSym"expect", newLit(count))
+
+    for argument in commandArguments:
+        let name = ident(argument.strVal())
+        let call = newCall(newDotExpr(ident"arguments", ident"pop"))
+
+        result.add newLetStmt(name, call)
+
 var arguments = commandLineParams().reversed()
 
 if arguments.len == 0:
@@ -347,9 +365,7 @@ let command = arguments.pop()
 
 case command
 of "list", "l":
-    expect(1)
-
-    let choice = arguments.pop()
+    capture(choice)
 
     case choice
     of "available", "a":
@@ -359,11 +375,7 @@ of "list", "l":
     else:
         fail(fmt"unrecognized choice '{choice}'!")
 of "download", "d":
-    expect(3)
-
-    let version = arguments.pop()
-    let platform = arguments.pop()
-    let file = arguments.pop()
+    capture(version, platform, file)
 
     case platform
     of "desktop", "d":
@@ -373,23 +385,17 @@ of "download", "d":
     else:
         fail("unrecognized platform '" & platform & "'!")
 of "install", "i":
-    expect(2)
-
-    let version = arguments.pop()
-    let platform = arguments.pop()
+    capture(version, platform)
 
     case platform
     of "desktop", "d":
-        install(version, platform = desktop)
+        install(version, desktop)
     of "server", "s":
-        install(version, platform = server)
+        install(version, server)
     else:
         fail("unrecognized platform '" & platform & "'!")
 of "uninstall", "u":
-    expect(2)
-
-    let version = arguments.pop()
-    let platform = arguments.pop()
+    capture(version, platform)
 
     case platform
     of "desktop", "d":
@@ -399,18 +405,11 @@ of "uninstall", "u":
     else:
         fail("unrecognized platform '" & platform & "'!")
 of "execute", "e":
-    expect(2)
-
-    let jar = arguments.pop()
-    let directory = arguments.pop()
+    capture(jar, directory)
 
     execute(jar, directory)
 of "run", "r":
-    expect(3)
-
-    let version = arguments.pop()
-    let platform = arguments.pop()
-    let directory = arguments.pop()
+    capture(version, platform, directory)
 
     case platform
     of "desktop", "d":
