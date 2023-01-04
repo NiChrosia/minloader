@@ -25,6 +25,10 @@ commands:
 minldr version v0.3.1
 """
 
+type
+    Platform = enum
+        desktop, server
+
 # utility
 proc onProgressChanged(total, progress, speed: BiggestInt) {.async.} =
     let length = 100
@@ -172,31 +176,15 @@ let dir = getConfigDir() / "minloader"
 if not dirExists(dir):
     createDir(dir)
 
-type
-    MindustryVersion = enum
-        mvDesktop, mvServer
-
-proc jar(tag: string, version: MindustryVersion): string =
+proc jar(tag: string, platform: Platform): string =
     let jarDir = dir / "jars"
     if not dirExists(jarDir):
         createDir(jarDir)
 
-    let extension = case version
-    of mvDesktop:
-        "desktop"
-    of mvServer:
-        "server"
-
-    let file = fmt"{jarDir}/{tag}-{extension}.jar"
+    let file = fmt"{jarDir}/{tag}-{platform}.jar"
     return file
 
-proc jar(tag: string, desktop, server: bool): string =
-    let version = if desktop: mvDesktop else: mvServer
-    let jar = jar(tag, version)
-
-    return jar
-
-proc downloadLink(tag: string, platform: MindustryVersion): string =
+proc downloadLink(tag: string, platform: Platform): string =
     var client = newAsyncHttpClient()
 
     let assets = waitFor client.assets()
@@ -209,54 +197,120 @@ proc downloadLink(tag: string, platform: MindustryVersion): string =
     if attachedAssets.len == 0:
         fail(fmt"version '{tag}' does not have any platforms!")
 
-    for givenAsset in attachedAssets.keys:
-        if givenAsset == "desktop-release.jar" or givenAsset == "Mindustry.jar" and platform == mvDesktop:
-            return attachedAssets[givenAsset]
-        elif givenAsset == "server-release.jar" and platform == mvServer:
-            return attachedAssets[givenAsset]
-        else:
-            fail("unrecognized asset '" & givenAsset & "' for tag '" & tag & "'; please report this on GitHub!")
+    let platformFiles = case platform
+    of desktop:
+        @["desktop-release.jar", "Mindustry.jar"]
+    of server:
+        @["server-release.jar"]
 
-proc download(tag: string, platform: MindustryVersion, file: string) =
+    for file in attachedAssets.keys:
+        if file in platformFiles:
+            return attachedAssets[file]
+
+    fail(fmt"{platform} asset not found!")
+
+proc download(tag: string, platform: Platform, file: string) =
     var client = newAsyncHttpClient()
 
     let link = downloadLink(tag, platform)
     client.downloadWithBar(link, file)
 
-proc install(tag: string; list = false, desktop = false, server = false, token: string = "") =
+proc listAvailable() =
     var client = newAsyncHttpClient()
     let assets = waitFor client.assets()
 
-    if list:
-        var available: seq[string]
+    var available: seq[string]
 
-        for tag in assets.keys:
-            if assets[tag].len > 0:
-                available.add(tag)
+    for tag in assets.keys:
+        if assets[tag].len > 0:
+            available.add(tag)
 
-        for i in 0 .. available.high:
-            let tag = available[i]
+    for i in 0 .. available.high:
+        let tag = available[i]
 
-            stdout.write tag
+        stdout.write tag
 
-            if i < available.high:
-                stdout.write ", "
-            else:
-                stdout.write "\n"
+        if i < available.high:
+            stdout.write ", "
+        else:
+            stdout.write "\n"
 
-        return
+proc listInstalled() =
+    let jarDir = dir / "jars"
+    if not dirExists(jarDir):
+        quit("no versions installed!")
 
-    let platform = if desktop: mvDesktop else: mvServer
+    # version - platforms in binary
+    # 10 = desktop, 01 = server, 11 = both
+    var platforms: Table[string, int]
+
+    var childrenInDir = 0
+
+    for (kind, path) in walkDir(jarDir):
+        if kind != pcFile:
+            continue
+
+        childrenInDir += 1
+
+        # example: v140.4-desktop.jar
+        let (_, name, _) = splitFile(path)
+        let parts = name.split("-")
+
+        let version = parts[0]
+        let platform = parts[1]
+
+        if not platforms.hasKey(version):
+            platforms[version] = 0b00
+
+        case platform
+        of "desktop":
+            platforms[version] = platforms[version] or 0b10
+        of "server":
+            platforms[version] = platforms[version] or 0b01
+        else:
+            discard
+
+    if childrenInDir == 0:
+        fail("no versions installed!")
+
+    for version in platforms.keys:
+        let bits = platforms[version]
+
+        let desktop = bool((bits and 0b10) shr 1)
+        let server = bool(bits and 0b01)
+
+        # color code for easier overall viewing
+        let color = if desktop and server:
+            fgMagenta
+        elif desktop:
+            fgRed
+        elif server:
+            fgBlue
+        else:
+            # not possible, existence in the
+            # table requires at least one platform
+            fgDefault
+
+        stdout.styledWrite color, version
+        stdout.write ": "
+
+        if desktop and server:
+            stdout.writeLine "desktop, server"
+        elif desktop:
+            stdout.writeLine "desktop"
+        elif server:
+            stdout.writeLine "server"
+
+proc install(tag: string, platform: Platform) =
+    var client = newAsyncHttpClient()
     client.downloadWithBar(downloadLink(tag, platform), jar(tag, platform))
 
-proc uninstall(tag: string, list = false, desktop = false, server = false) =
-    let jar = jar(tag, desktop, server)
+proc uninstall(tag: string, platform: Platform) =
+    let jar = jar(tag, platform)
 
     if fileExists(jar):
         removeFile(jar)
     else:
-        let platform = if desktop: "desktop" else: "server"
-
         fail(fmt"platform '{platform}' of version '{tag}' not installed!")
 
 proc execute(jar, directory: string) =
@@ -274,14 +328,12 @@ proc execute(jar, directory: string) =
 
     discard execShellCmd(command)
 
-proc run(tag, directory: string; list = false, desktop = false, server = false) =
+proc run(tag, directory: string, platform: Platform) =
     ## run a mindustry jar in the specified directory
 
-    let jar = jar(tag, desktop, server)
+    let jar = jar(tag, platform)
 
     if not fileExists(jar):
-        let platform = if desktop: "desktop" else: "server"
-
         fail(fmt"platform '{platform}' of version '{tag}' is not installed!")
 
     execute(jar, directory)
@@ -301,74 +353,11 @@ of "list", "l":
 
     case choice
     of "available", "a":
-        install("", list = true)
+        listAvailable()
     of "installed", "i":
-        let jarDir = dir / "jars"
-        if not dirExists(jarDir):
-            quit("no versions installed!")
-
-        # version - platforms in binary
-        # 10 = desktop, 01 = server, 11 = both
-        var platforms: Table[string, int]
-    
-        var childrenInDir = 0
-
-        for (kind, path) in walkDir(jarDir):
-            if kind != pcFile:
-                continue
-
-            childrenInDir += 1
-
-            # example: v140.4-desktop.jar
-            let (_, name, _) = splitFile(path)
-            let parts = name.split("-")
-
-            let version = parts[0]
-            let platform = parts[1]
-
-            if not platforms.hasKey(version):
-                platforms[version] = 0b00
-
-            case platform
-            of "desktop":
-                platforms[version] = platforms[version] or 0b10
-            of "server":
-                platforms[version] = platforms[version] or 0b01
-            else:
-                discard
-
-        if childrenInDir == 0:
-            fail("no versions installed!")
-
-        for version in platforms.keys:
-            let bits = platforms[version]
-
-            let desktop = bool((bits and 0b10) shr 1)
-            let server = bool(bits and 0b01)
-
-            # color code for easier overall viewing
-            let color = if desktop and server:
-                fgMagenta
-            elif desktop:
-                fgRed
-            elif server:
-                fgBlue
-            else:
-                # not possible, existence in the
-                # table requires at least one platform
-                fgDefault
-
-            stdout.styledWrite color, version
-            stdout.write ": "
-
-            if desktop and server:
-                stdout.writeLine "desktop, server"
-            elif desktop:
-                stdout.writeLine "desktop"
-            elif server:
-                stdout.writeLine "server"
+        listInstalled()
     else:
-        fail("unrecognized choice '" & choice & "'!")
+        fail(fmt"unrecognized choice '{choice}'!")
 of "download", "d":
     expect(3)
 
@@ -378,9 +367,9 @@ of "download", "d":
 
     case platform
     of "desktop", "d":
-        download(version, mvDesktop, file)
+        download(version, desktop, file)
     of "server", "s":
-        download(version, mvServer, file)
+        download(version, server, file)
     else:
         fail("unrecognized platform '" & platform & "'!")
 of "install", "i":
@@ -391,9 +380,9 @@ of "install", "i":
 
     case platform
     of "desktop", "d":
-        install(version, desktop = true)
+        install(version, platform = desktop)
     of "server", "s":
-        install(version, server = true)
+        install(version, platform = server)
     else:
         fail("unrecognized platform '" & platform & "'!")
 of "uninstall", "u":
@@ -404,9 +393,9 @@ of "uninstall", "u":
 
     case platform
     of "desktop", "d":
-        uninstall(version, desktop = true)
+        uninstall(version, desktop)
     of "server", "s":
-        uninstall(version, server = true)
+        uninstall(version, server)
     else:
         fail("unrecognized platform '" & platform & "'!")
 of "execute", "e":
@@ -425,9 +414,9 @@ of "run", "r":
 
     case platform
     of "desktop", "d":
-        run(version, directory, desktop = true)
+        run(version, directory, desktop)
     of "server", "s":
-        run(version, directory, server = true)
+        run(version, directory, server)
     else:
         fail("unrecognized platform '" & platform & "'!")
 else:
