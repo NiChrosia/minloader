@@ -1,7 +1,6 @@
 import httpclient, os, json, tables, strutils, algorithm, strformat, terminal, asyncdispatch, macros
 
-const HELP = """
-usage: minldr [command]
+const HELP = """usage: minldr [command]
 
 commands:
 (l)ist [(a)vailable | (i)nstalled]
@@ -22,13 +21,71 @@ commands:
 (r)un [version] [(d)esktop | (s)erver] [directory]
 :: runs [platform] of [version] in [directory]
 
-minldr version v0.3.1
-"""
+minldr version v0.3.1"""
 
+var dir = getConfigDir() / "minloader"
+
+# program execution control
 proc fail(error: string) =
     echo error
     quit(QuitFailure)
 
+# CLI stuff
+proc expect(count: int) =
+    # first argument is command
+    let found = paramCount() - 1
+
+    if found < count:
+        let command = paramStr(1)
+
+        var start, stop: int
+
+        if command.len == 1:
+            # abbreviation
+            start = HELP.find(fmt"({command})")
+        else:
+            # full name
+            let first = command[0]
+            let rest = command[1 .. command.high]
+
+            # i.e., (c)ommand
+            start = HELP.find(fmt"({first}){rest}")
+
+        var newlines = 0
+
+        for i in start .. HELP.high:
+            if HELP[i] == '\n':
+                newlines += 1
+
+            if newlines == 2:
+                # we don't want the second newline
+                stop = i - 1
+                break
+
+        let help = HELP[start .. stop]
+        echo help
+
+        quit(fmt"{found}/{count} arguments given!")
+
+# capture(a, b, c)
+# ->
+# expect(3)
+# let a = arguments.pop()
+# let b = arguments.pop()
+# let c = arguments.pop()
+macro capture(commandArguments: varargs[untyped]): untyped =
+    result = newStmtList()
+
+    let count = commandArguments.len
+    result.add newCall(bindSym"expect", newLit(count))
+
+    for argument in commandArguments:
+        let name = ident(argument.strVal())
+        let call = newCall(newDotExpr(ident"arguments", ident"pop"))
+
+        result.add newLetStmt(name, call)
+
+# platforms
 type
     Platform = enum
         desktop, server
@@ -42,46 +99,7 @@ proc platform(name: string): Platform =
     else:
         fail("unrecognized platform '" & name & "'!")
 
-# utility
-proc onProgressChanged(total, progress, speed: BiggestInt) {.async.} =
-    let length = 100
-    # max(progress, total) exists because total is sometimes weirdly less than progress
-    let barProgress = int(float(progress) / float(max(progress, total)) * float(length))
-
-    # erase previous progress bar first
-    stdout.cursorUp(1)
-    stdout.eraseLine()
-
-    stdout.write("[")
-
-    var bar: string
-    bar &= "—".repeat(barProgress)
-
-    if barProgress > 0:
-        # replace last - with >
-        bar[^1] = '>'
-
-    bar &= " ".repeat(length - barProgress)
-
-    stdout.styledWrite(fgGreen, bar)
-    stdout.write("]\n")
-
-proc downloadWithBar(client: var AsyncHttpClient, link: string, file: string) =
-    # progress bar is exclusive to this function, so only add it here
-    client.onProgressChanged = onProgressChanged
-
-    # provide empty bar, as each progress report replaces the previous line
-    echo ""
-    waitFor client.onProgressChanged(1, 0, 0)
-
-    # download the file, with progress reports
-    waitFor client.downloadFile(link, file)
-
-    # the final stretch is never called, so do it manually
-    waitFor client.onProgressChanged(1, 1, 0)
-
-    echo "download complete!"
-
+# GitHub API interface
 proc parseLinks(raw: string): Table[string, string] =
     for link in raw.split(", "):
         var url, rel: string
@@ -144,58 +162,48 @@ proc assets(client: AsyncHttpClient): Future[OrderedTable[string, OrderedTable[s
 
         result[tag] = downloads
 
-proc expect(count: int) =
-    # first argument is command
-    let found = paramCount() - 1
+# downloads
+proc onProgressChanged(total, progress, speed: BiggestInt) {.async.} =
+    let length = 100
+    # max(progress, total) exists because total is sometimes weirdly less than progress
+    let barProgress = int(float(progress) / float(max(progress, total)) * float(length))
 
-    if found < count:
-        let command = paramStr(1)
+    # erase previous progress bar first
+    stdout.cursorUp(1)
+    stdout.eraseLine()
 
-        var start, stop: int
+    stdout.write("[")
 
-        if command.len == 1:
-            # abbreviation
-            start = HELP.find(fmt"({command})")
-        else:
-            # full name
-            let first = command[0]
-            let rest = command[1 .. command.high]
+    var bar: string
+    bar &= "—".repeat(barProgress)
 
-            # i.e., (c)ommand
-            start = HELP.find(fmt"({first}){rest}")
+    if barProgress > 0:
+        # replace last - with >
+        bar[^1] = '>'
 
-        var newlines = 0
+    bar &= " ".repeat(length - barProgress)
 
-        for i in start .. HELP.high:
-            if HELP[i] == '\n':
-                newlines += 1
+    stdout.styledWrite(fgGreen, bar)
+    stdout.write("]\n")
 
-            if newlines == 2:
-                # we don't want the second newline
-                stop = i - 1
-                break
+proc downloadWithBar(client: var AsyncHttpClient, link: string, file: string) =
+    # progress bar is exclusive to this function, so only add it here
+    client.onProgressChanged = onProgressChanged
 
-        let help = HELP[start .. stop]
-        echo help
+    # provide empty bar, as each progress report replaces the previous line
+    echo ""
+    waitFor client.onProgressChanged(1, 0, 0)
 
-        quit(fmt"{found}/{count} arguments given!")
+    # download the file, with progress reports
+    waitFor client.downloadFile(link, file)
 
-# initialize application folder
-let dir = getConfigDir() / "minloader"
-if not dirExists(dir):
-    createDir(dir)
+    # the final stretch is never called, so do it manually
+    waitFor client.onProgressChanged(1, 1, 0)
 
-proc jar(tag: string, platform: Platform): string =
-    let jarDir = dir / "jars"
-    if not dirExists(jarDir):
-        createDir(jarDir)
-
-    let file = fmt"{jarDir}/{tag}-{platform}.jar"
-    return file
+    echo "download complete!"
 
 proc downloadLink(tag: string, platform: Platform): string =
     var client = newAsyncHttpClient()
-
     let assets = waitFor client.assets()
 
     if not assets.hasKey(tag):
@@ -218,12 +226,20 @@ proc downloadLink(tag: string, platform: Platform): string =
 
     fail(fmt"{platform} asset not found!")
 
-proc download(tag: string, platform: Platform, file: string) =
-    var client = newAsyncHttpClient()
+# files
+proc createIfNot(directory: string): string =
+    if not dirExists(directory):
+        createDir(directory)
 
-    let link = downloadLink(tag, platform)
-    client.downloadWithBar(link, file)
+    return directory
 
+proc jar(tag: string, platform: Platform): string =
+    let jarDir = createIfNot(dir / "jars")
+
+    let file = fmt"{jarDir}/{tag}-{platform}.jar"
+    return file
+
+# commands
 proc listAvailable() =
     var client = newAsyncHttpClient()
     let assets = waitFor client.assets()
@@ -310,6 +326,12 @@ proc listInstalled() =
         elif server:
             stdout.writeLine "server"
 
+proc download(tag: string, platform: Platform, file: string) =
+    var client = newAsyncHttpClient()
+
+    let link = downloadLink(tag, platform)
+    client.downloadWithBar(link, file)
+
 proc install(tag: string, platform: Platform) =
     var client = newAsyncHttpClient()
     client.downloadWithBar(downloadLink(tag, platform), jar(tag, platform))
@@ -347,28 +369,13 @@ proc run(tag, directory: string, platform: Platform) =
 
     execute(jar, directory)
 
-# capture(a, b, c)
-# ->
-# expect(3)
-# let a = arguments.pop()
-# let b = arguments.pop()
-# let c = arguments.pop()
-macro capture(commandArguments: varargs[untyped]): untyped =
-    result = newStmtList()
-
-    let count = commandArguments.len
-    result.add newCall(bindSym"expect", newLit(count))
-
-    for argument in commandArguments:
-        let name = ident(argument.strVal())
-        let call = newCall(newDotExpr(ident"arguments", ident"pop"))
-
-        result.add newLetStmt(name, call)
+# program execution
+dir = createIfNot(dir)
 
 var arguments = commandLineParams().reversed()
 
 if arguments.len == 0:
-    echo HELP
+    fail(HELP)
 
 let command = arguments.pop()
 
