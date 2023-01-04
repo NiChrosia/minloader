@@ -25,9 +25,22 @@ commands:
 minldr version v0.3.1
 """
 
+proc fail(error: string) =
+    echo error
+    quit(QuitFailure)
+
 type
     Platform = enum
         desktop, server
+
+proc platform(name: string): Platform =
+    case name
+    of "desktop", "d":
+        return desktop
+    of "server", "s":
+        return server
+    else:
+        fail("unrecognized platform '" & name & "'!")
 
 # utility
 proc onProgressChanged(total, progress, speed: BiggestInt) {.async.} =
@@ -130,10 +143,6 @@ proc assets(client: AsyncHttpClient): Future[OrderedTable[string, OrderedTable[s
             downloads[name] = url
 
         result[tag] = downloads
-
-proc fail(error: string) =
-    echo error
-    quit(QuitFailure)
 
 proc expect(count: int) =
     # first argument is command
@@ -376,47 +385,18 @@ of "list", "l":
         fail(fmt"unrecognized choice '{choice}'!")
 of "download", "d":
     capture(version, platform, file)
-
-    case platform
-    of "desktop", "d":
-        download(version, desktop, file)
-    of "server", "s":
-        download(version, server, file)
-    else:
-        fail("unrecognized platform '" & platform & "'!")
+    download(version, platform(platform), file)
 of "install", "i":
     capture(version, platform)
-
-    case platform
-    of "desktop", "d":
-        install(version, desktop)
-    of "server", "s":
-        install(version, server)
-    else:
-        fail("unrecognized platform '" & platform & "'!")
+    install(version, platform(platform))
 of "uninstall", "u":
     capture(version, platform)
-
-    case platform
-    of "desktop", "d":
-        uninstall(version, desktop)
-    of "server", "s":
-        uninstall(version, server)
-    else:
-        fail("unrecognized platform '" & platform & "'!")
+    uninstall(version, platform(platform))
 of "execute", "e":
     capture(jar, directory)
-
     execute(jar, directory)
 of "run", "r":
     capture(version, platform, directory)
-
-    case platform
-    of "desktop", "d":
-        run(version, directory, desktop)
-    of "server", "s":
-        run(version, directory, server)
-    else:
-        fail("unrecognized platform '" & platform & "'!")
+    run(version, directory, platform(platform))
 else:
     fail("unrecognized command '" & command & "'!")
