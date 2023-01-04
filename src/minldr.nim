@@ -1,7 +1,6 @@
-import httpclient, os, json, tables, strutils, algorithm, strformat, terminal, asyncdispatch
+import httpclient, os, json, tables, strutils, algorithm, strformat, terminal, asyncdispatch, macros
 
-const HELP = """
-usage: minldr [command]
+const HELP = """usage: minldr [command]
 
 commands:
 (l)ist [(a)vailable | (i)nstalled]
@@ -22,49 +21,85 @@ commands:
 (r)un [version] [(d)esktop | (s)erver] [directory]
 :: runs [platform] of [version] in [directory]
 
-minldr version v0.3.1
-"""
+minldr version v0.3.1"""
 
-# utility
-proc onProgressChanged(total, progress, speed: BiggestInt) {.async.} =
-    let length = 100
-    # max(progress, total) exists because total is sometimes weirdly less than progress
-    let barProgress = int(float(progress) / float(max(progress, total)) * float(length))
+var dir = getConfigDir() / "minloader"
 
-    # erase previous progress bar first
-    stdout.cursorUp(1)
-    stdout.eraseLine()
+# program execution control
+proc fail(error: string) =
+    echo error
+    quit(QuitFailure)
 
-    stdout.write("[")
+# CLI stuff
+proc expect(count: int) =
+    # first argument is command
+    let found = paramCount() - 1
 
-    var bar: string
-    bar &= "—".repeat(barProgress)
+    if found < count:
+        let command = paramStr(1)
 
-    if barProgress > 0:
-        # replace last - with >
-        bar[^1] = '>'
+        var start, stop: int
 
-    bar &= " ".repeat(length - barProgress)
+        if command.len == 1:
+            # abbreviation
+            start = HELP.find(fmt"({command})")
+        else:
+            # full name
+            let first = command[0]
+            let rest = command[1 .. command.high]
 
-    stdout.styledWrite(fgGreen, bar)
-    stdout.write("]\n")
+            # i.e., (c)ommand
+            start = HELP.find(fmt"({first}){rest}")
 
-proc downloadWithBar(client: var AsyncHttpClient, link: string, file: string) =
-    # progress bar is exclusive to this function, so only add it here
-    client.onProgressChanged = onProgressChanged
+        var newlines = 0
 
-    # provide empty bar, as each progress report replaces the previous line
-    echo ""
-    waitFor client.onProgressChanged(1, 0, 0)
+        for i in start .. HELP.high:
+            if HELP[i] == '\n':
+                newlines += 1
 
-    # download the file, with progress reports
-    waitFor client.downloadFile(link, file)
+            if newlines == 2:
+                # we don't want the second newline
+                stop = i - 1
+                break
 
-    # the final stretch is never called, so do it manually
-    waitFor client.onProgressChanged(1, 1, 0)
+        let help = HELP[start .. stop]
+        echo help
 
-    echo "download complete!"
+        quit(fmt"{found}/{count} arguments given!")
 
+# capture(a, b, c)
+# ->
+# expect(3)
+# let a = arguments.pop()
+# let b = arguments.pop()
+# let c = arguments.pop()
+macro capture(commandArguments: varargs[untyped]): untyped =
+    result = newStmtList()
+
+    let count = commandArguments.len
+    result.add newCall(bindSym"expect", newLit(count))
+
+    for argument in commandArguments:
+        let name = ident(argument.strVal())
+        let call = newCall(newDotExpr(ident"arguments", ident"pop"))
+
+        result.add newLetStmt(name, call)
+
+# platforms
+type
+    Platform = enum
+        desktop, server
+
+proc platform(name: string): Platform =
+    case name
+    of "desktop", "d":
+        return desktop
+    of "server", "s":
+        return server
+    else:
+        fail("unrecognized platform '" & name & "'!")
+
+# GitHub API interface
 proc parseLinks(raw: string): Table[string, string] =
     for link in raw.split(", "):
         var url, rel: string
@@ -127,78 +162,48 @@ proc assets(client: AsyncHttpClient): Future[OrderedTable[string, OrderedTable[s
 
         result[tag] = downloads
 
-proc fail(error: string) =
-    echo error
-    quit(QuitFailure)
+# downloads
+proc onProgressChanged(total, progress, speed: BiggestInt) {.async.} =
+    let length = 100
+    # max(progress, total) exists because total is sometimes weirdly less than progress
+    let barProgress = int(float(progress) / float(max(progress, total)) * float(length))
 
-proc expect(count: int) =
-    # first argument is command
-    let found = paramCount() - 1
+    # erase previous progress bar first
+    stdout.cursorUp(1)
+    stdout.eraseLine()
 
-    if found < count:
-        let command = paramStr(1)
+    stdout.write("[")
 
-        var start, stop: int
+    var bar: string
+    bar &= "—".repeat(barProgress)
 
-        if command.len == 1:
-            # abbreviation
-            start = HELP.find(fmt"({command})")
-        else:
-            # full name
-            let first = command[0]
-            let rest = command[1 .. command.high]
+    if barProgress > 0:
+        # replace last - with >
+        bar[^1] = '>'
 
-            # i.e., (c)ommand
-            start = HELP.find(fmt"({first}){rest}")
+    bar &= " ".repeat(length - barProgress)
 
-        var newlines = 0
+    stdout.styledWrite(fgGreen, bar)
+    stdout.write("]\n")
 
-        for i in start .. HELP.high:
-            if HELP[i] == '\n':
-                newlines += 1
+proc downloadWithBar(client: var AsyncHttpClient, link: string, file: string) =
+    # progress bar is exclusive to this function, so only add it here
+    client.onProgressChanged = onProgressChanged
 
-            if newlines == 2:
-                # we don't want the second newline
-                stop = i - 1
-                break
+    # provide empty bar, as each progress report replaces the previous line
+    echo ""
+    waitFor client.onProgressChanged(1, 0, 0)
 
-        let help = HELP[start .. stop]
-        echo help
+    # download the file, with progress reports
+    waitFor client.downloadFile(link, file)
 
-        quit(fmt"{found}/{count} arguments given!")
+    # the final stretch is never called, so do it manually
+    waitFor client.onProgressChanged(1, 1, 0)
 
-# initialize application folder
-let dir = getConfigDir() / "minloader"
-if not dirExists(dir):
-    createDir(dir)
+    echo "download complete!"
 
-type
-    MindustryVersion = enum
-        mvDesktop, mvServer
-
-proc jar(tag: string, version: MindustryVersion): string =
-    let jarDir = dir / "jars"
-    if not dirExists(jarDir):
-        createDir(jarDir)
-
-    let extension = case version
-    of mvDesktop:
-        "desktop"
-    of mvServer:
-        "server"
-
-    let file = fmt"{jarDir}/{tag}-{extension}.jar"
-    return file
-
-proc jar(tag: string, desktop, server: bool): string =
-    let version = if desktop: mvDesktop else: mvServer
-    let jar = jar(tag, version)
-
-    return jar
-
-proc downloadLink(tag: string, platform: MindustryVersion): string =
+proc downloadLink(tag: string, platform: Platform): string =
     var client = newAsyncHttpClient()
-
     let assets = waitFor client.assets()
 
     if not assets.hasKey(tag):
@@ -209,54 +214,133 @@ proc downloadLink(tag: string, platform: MindustryVersion): string =
     if attachedAssets.len == 0:
         fail(fmt"version '{tag}' does not have any platforms!")
 
-    for givenAsset in attachedAssets.keys:
-        if givenAsset == "desktop-release.jar" or givenAsset == "Mindustry.jar" and platform == mvDesktop:
-            return attachedAssets[givenAsset]
-        elif givenAsset == "server-release.jar" and platform == mvServer:
-            return attachedAssets[givenAsset]
-        else:
-            fail("unrecognized asset '" & givenAsset & "' for tag '" & tag & "'; please report this on GitHub!")
+    let platformFiles = case platform
+    of desktop:
+        @["desktop-release.jar", "Mindustry.jar"]
+    of server:
+        @["server-release.jar"]
 
-proc download(tag: string, platform: MindustryVersion, file: string) =
+    for file in attachedAssets.keys:
+        if file in platformFiles:
+            return attachedAssets[file]
+
+    fail(fmt"{platform} asset not found!")
+
+# files
+proc createIfNot(directory: string): string =
+    if not dirExists(directory):
+        createDir(directory)
+
+    return directory
+
+proc findJar(tag: string, platform: Platform): string =
+    let jarDir = createIfNot(dir / "jars")
+
+    let file = fmt"{jarDir}/{tag}-{platform}.jar"
+    return file
+
+# commands
+proc listAvailable() =
+    var client = newAsyncHttpClient()
+    let assets = waitFor client.assets()
+
+    var available: seq[string]
+
+    for tag in assets.keys:
+        if assets[tag].len > 0:
+            available.add(tag)
+
+    for i in 0 .. available.high:
+        let tag = available[i]
+
+        stdout.write tag
+
+        if i < available.high:
+            stdout.write ", "
+        else:
+            stdout.write "\n"
+
+proc listInstalled() =
+    let jarDir = dir / "jars"
+    if not dirExists(jarDir):
+        quit("no versions installed!")
+
+    # version - platforms in binary
+    # 10 = desktop, 01 = server, 11 = both
+    var platforms: Table[string, int]
+
+    var childrenInDir = 0
+
+    for (kind, path) in walkDir(jarDir):
+        if kind != pcFile:
+            continue
+
+        childrenInDir += 1
+
+        # example: v140.4-desktop.jar
+        let (_, name, _) = splitFile(path)
+        let parts = name.split("-")
+
+        let version = parts[0]
+        let platform = parts[1]
+
+        if not platforms.hasKey(version):
+            platforms[version] = 0b00
+
+        case platform
+        of "desktop":
+            platforms[version] = platforms[version] or 0b10
+        of "server":
+            platforms[version] = platforms[version] or 0b01
+        else:
+            discard
+
+    if childrenInDir == 0:
+        fail("no versions installed!")
+
+    for version in platforms.keys:
+        let bits = platforms[version]
+
+        let desktop = bool((bits and 0b10) shr 1)
+        let server = bool(bits and 0b01)
+
+        # color code for easier overall viewing
+        let color = if desktop and server:
+            fgMagenta
+        elif desktop:
+            fgRed
+        elif server:
+            fgBlue
+        else:
+            # not possible, existence in the
+            # table requires at least one platform
+            fgDefault
+
+        stdout.styledWrite color, version
+        stdout.write ": "
+
+        if desktop and server:
+            stdout.writeLine "desktop, server"
+        elif desktop:
+            stdout.writeLine "desktop"
+        elif server:
+            stdout.writeLine "server"
+
+proc download(tag: string, platform: Platform, file: string) =
     var client = newAsyncHttpClient()
 
     let link = downloadLink(tag, platform)
     client.downloadWithBar(link, file)
 
-proc install(tag: string; list = false, desktop = false, server = false, token: string = "") =
-    var client = newAsyncHttpClient()
-    let assets = waitFor client.assets()
+proc install(tag: string, platform: Platform) =
+    download(tag, platform, findJar(tag, platform))
 
-    if list:
-        var available: seq[string]
-
-        for tag in assets.keys:
-            if assets[tag].len > 0:
-                available.add(tag)
-
-        for i in 0 .. available.high:
-            let tag = available[i]
-
-            stdout.write tag
-
-            if i < available.high:
-                stdout.write ", "
-            else:
-                stdout.write "\n"
-
-        return
-
-    let platform = if desktop: mvDesktop else: mvServer
-    client.downloadWithBar(downloadLink(tag, platform), jar(tag, platform))
-
-proc uninstall(tag: string, list = false, desktop = false, server = false) =
-    let jar = jar(tag, desktop, server)
+proc uninstall(tag: string, platform: Platform) =
+    let jar = findJar(tag, platform)
 
     if fileExists(jar):
         removeFile(jar)
     else:
-        let platform = if desktop: "desktop" else: "server"
-
         fail(fmt"platform '{platform}' of version '{tag}' not installed!")
 
 proc execute(jar, directory: string) =
@@ -274,161 +358,51 @@ proc execute(jar, directory: string) =
 
     discard execShellCmd(command)
 
-proc run(tag, directory: string; list = false, desktop = false, server = false) =
+proc run(tag, directory: string, platform: Platform) =
     ## run a mindustry jar in the specified directory
 
-    let jar = jar(tag, desktop, server)
+    let jar = findJar(tag, platform)
 
     if not fileExists(jar):
-        let platform = if desktop: "desktop" else: "server"
-
         fail(fmt"platform '{platform}' of version '{tag}' is not installed!")
 
     execute(jar, directory)
 
+# program execution
+dir = createIfNot(dir)
+
 var arguments = commandLineParams().reversed()
 
 if arguments.len == 0:
-    echo HELP
+    fail(HELP)
 
 let command = arguments.pop()
 
 case command
 of "list", "l":
-    expect(1)
-
-    let choice = arguments.pop()
+    capture(choice)
 
     case choice
     of "available", "a":
-        install("", list = true)
+        listAvailable()
     of "installed", "i":
-        let jarDir = dir / "jars"
-        if not dirExists(jarDir):
-            quit("no versions installed!")
-
-        # version - platforms in binary
-        # 10 = desktop, 01 = server, 11 = both
-        var platforms: Table[string, int]
-    
-        var childrenInDir = 0
-
-        for (kind, path) in walkDir(jarDir):
-            if kind != pcFile:
-                continue
-
-            childrenInDir += 1
-
-            # example: v140.4-desktop.jar
-            let (_, name, _) = splitFile(path)
-            let parts = name.split("-")
-
-            let version = parts[0]
-            let platform = parts[1]
-
-            if not platforms.hasKey(version):
-                platforms[version] = 0b00
-
-            case platform
-            of "desktop":
-                platforms[version] = platforms[version] or 0b10
-            of "server":
-                platforms[version] = platforms[version] or 0b01
-            else:
-                discard
-
-        if childrenInDir == 0:
-            fail("no versions installed!")
-
-        for version in platforms.keys:
-            let bits = platforms[version]
-
-            let desktop = bool((bits and 0b10) shr 1)
-            let server = bool(bits and 0b01)
-
-            # color code for easier overall viewing
-            let color = if desktop and server:
-                fgMagenta
-            elif desktop:
-                fgRed
-            elif server:
-                fgBlue
-            else:
-                # not possible, existence in the
-                # table requires at least one platform
-                fgDefault
-
-            stdout.styledWrite color, version
-            stdout.write ": "
-
-            if desktop and server:
-                stdout.writeLine "desktop, server"
-            elif desktop:
-                stdout.writeLine "desktop"
-            elif server:
-                stdout.writeLine "server"
+        listInstalled()
     else:
-        fail("unrecognized choice '" & choice & "'!")
+        fail(fmt"unrecognized choice '{choice}'!")
 of "download", "d":
-    expect(3)
-
-    let version = arguments.pop()
-    let platform = arguments.pop()
-    let file = arguments.pop()
-
-    case platform
-    of "desktop", "d":
-        download(version, mvDesktop, file)
-    of "server", "s":
-        download(version, mvServer, file)
-    else:
-        fail("unrecognized platform '" & platform & "'!")
+    capture(version, platform, file)
+    download(version, platform(platform), file)
 of "install", "i":
-    expect(2)
-
-    let version = arguments.pop()
-    let platform = arguments.pop()
-
-    case platform
-    of "desktop", "d":
-        install(version, desktop = true)
-    of "server", "s":
-        install(version, server = true)
-    else:
-        fail("unrecognized platform '" & platform & "'!")
+    capture(version, platform)
+    install(version, platform(platform))
 of "uninstall", "u":
-    expect(2)
-
-    let version = arguments.pop()
-    let platform = arguments.pop()
-
-    case platform
-    of "desktop", "d":
-        uninstall(version, desktop = true)
-    of "server", "s":
-        uninstall(version, server = true)
-    else:
-        fail("unrecognized platform '" & platform & "'!")
+    capture(version, platform)
+    uninstall(version, platform(platform))
 of "execute", "e":
-    expect(2)
-
-    let jar = arguments.pop()
-    let directory = arguments.pop()
-
+    capture(jar, directory)
     execute(jar, directory)
 of "run", "r":
-    expect(3)
-
-    let version = arguments.pop()
-    let platform = arguments.pop()
-    let directory = arguments.pop()
-
-    case platform
-    of "desktop", "d":
-        run(version, directory, desktop = true)
-    of "server", "s":
-        run(version, directory, server = true)
-    else:
-        fail("unrecognized platform '" & platform & "'!")
+    capture(version, platform, directory)
+    run(version, directory, platform(platform))
 else:
     fail("unrecognized command '" & command & "'!")
