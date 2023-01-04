@@ -233,7 +233,7 @@ proc createIfNot(directory: string): string =
 
     return directory
 
-proc jar(tag: string, platform: Platform): string =
+proc findJar(tag: string, platform: Platform): string =
     let jarDir = createIfNot(dir / "jars")
 
     let file = fmt"{jarDir}/{tag}-{platform}.jar"
@@ -333,11 +333,10 @@ proc download(tag: string, platform: Platform, file: string) =
     client.downloadWithBar(link, file)
 
 proc install(tag: string, platform: Platform) =
-    var client = newAsyncHttpClient()
-    client.downloadWithBar(downloadLink(tag, platform), jar(tag, platform))
+    download(tag, platform, findJar(tag, platform))
 
 proc uninstall(tag: string, platform: Platform) =
-    let jar = jar(tag, platform)
+    let jar = findJar(tag, platform)
 
     if fileExists(jar):
         removeFile(jar)
@@ -362,7 +361,7 @@ proc execute(jar, directory: string) =
 proc run(tag, directory: string, platform: Platform) =
     ## run a mindustry jar in the specified directory
 
-    let jar = jar(tag, platform)
+    let jar = findJar(tag, platform)
 
     if not fileExists(jar):
         fail(fmt"platform '{platform}' of version '{tag}' is not installed!")
